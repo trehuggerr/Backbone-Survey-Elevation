@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>LevelNotes</title>
+    <style>
+        /* CSS for App Styling */
+        :root {
+            --primary-bg: #f4f4f9;
+            --secondary-bg: #ffffff;
+            --text-color: #333;
+            --header-bg: #4a69bd;
+            --header-text: #ffffff;
+            --button-bg: #4a69bd;
+            --button-hover: #5d82d1;
+            --input-border: #ccc;
+            --danger-bg: #e74c3c;
+            --danger-hover: #c0392b;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--text-color);
+            margin: 0;
+            padding: 15px;
+            font-size: 16px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1, h2 {
+            color: var(--header-bg);
+            text-align: center;
+        }
+        .card {
+            background-color: var(--secondary-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--input-border);
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 1.1em;
+        }
+        .button {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: var(--button-bg);
+            color: var(--header-text);
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .button:hover {
+            background-color: var(--button-hover);
+        }
+        .button-danger {
+            background-color: var(--danger-bg);
+        }
+        .button-danger:hover {
+            background-color: var(--danger-hover);
+        }
+        .hi-display {
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--header-bg);
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            overflow-x: auto;
+            display: block;
+        }
+        th, td {
+            border: 1px solid var(--input-border);
+            padding: 12px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        th {
+            background-color: var(--header-bg);
+            color: var(--header-text);
+        }
+        .calculated {
+            background-color: #e9ecef;
+            font-weight: bold;
+        }
+        #dataEntrySection, #surveyDataSection {
+            display: none; /* Hidden by default */
+        }
+        .flex-container {
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>LevelNotes 📝</h1>
+
+        <div id="setupSection" class="card">
+            <h2>1. Project Setup</h2>
+            <div class="form-group">
+                <label for="benchmark">Benchmark (BM) Elevation</label>
+                <input type="number" id="benchmark" step="any" placeholder="e.g., 100.00">
+            </div>
+            <div class="form-group">
+                <label for="backsight">Backsight (BS) Reading</label>
+                <input type="number" id="backsight" step="any" placeholder="e.g., 4.52">
+            </div>
+            <div class="form-group">
+                <label for="customFieldName">Custom Field Name</label>
+                <input type="text" id="customFieldName" placeholder="e.g., Top of Curb">
+            </div>
+            <div class="form-group">
+                <label for="customFieldFormula">Custom Field Formula (use ELEV)</label>
+                <input type="text" id="customFieldFormula" placeholder="e.g., ELEV + 0.5">
+            </div>
+            <button id="startSurveyBtn" class="button">Start Survey</button>
+        </div>
+
+        <div id="surveyDataSection" class="card">
+            <div class="hi-display" id="hiDisplay">HI: ---</div>
+            <div id="dataEntrySection">
+                <h2>2. Data Entry</h2>
+                <div class="form-group">
+                    <label for="pointNumber">Point #</label>
+                    <input type="text" id="pointNumber" placeholder="Auto-increments">
+                </div>
+                <div class="form-group">
+                    <label for="reading">Reading (FS/IS)</label>
+                    <input type="number" id="reading" step="any" placeholder="Enter reading">
+                </div>
+                <button id="addPointBtn" class="button">Add Point</button>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="card" style="display: none;">
+            <h2>3. Survey Data</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Point #</th>
+                        <th>Reading</th>
+                        <th>Elevation</th>
+                        <th id="customHeaderCell">Custom</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
+            <div class="flex-container">
+                <button id="exportCsvBtn" class="button">Export to CSV</button>
+                <button id="newHiBtn" class="button button-danger">New HI</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+    // JavaScript for App Functionality
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- STATE VARIABLES ---
+        let heightOfInstrument = 0;
+        let pointCounter = 1;
+        let surveyData = [];
+        let customFieldName = 'Custom';
+        let customFieldFormula = 'ELEV';
+
+        // --- DOM ELEMENTS ---
+        const setupSection = document.getElementById('setupSection');
+        const dataEntrySection = document.getElementById('dataEntrySection');
+        const surveyDataSection = document.getElementById('surveyDataSection');
+        const resultsSection = document.getElementById('resultsSection');
+
+        const benchmarkInput = document.getElementById('benchmark');
+        const backsightInput = document.getElementById('backsight');
+        const startSurveyBtn = document.getElementById('startSurveyBtn');
+
+        const hiDisplay = document.getElementById('hiDisplay');
+        const pointNumberInput = document.getElementById('pointNumber');
+        const readingInput = document.getElementById('reading');
+        const addPointBtn = document.getElementById('addPointBtn');
+
+        const resultsTableBody = document.querySelector('#resultsSection tbody');
+        const customHeaderCell = document.getElementById('customHeaderCell');
+        const customFieldNameInput = document.getElementById('customFieldName');
+        const customFieldFormulaInput = document.getElementById('customFieldFormula');
+        
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const newHiBtn = document.getElementById('newHiBtn');
+
+        // --- EVENT LISTENERS ---
+        startSurveyBtn.addEventListener('click', startSurvey);
+        addPointBtn.addEventListener('click', addPoint);
+        readingInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') addPoint();
+        });
+        newHiBtn.addEventListener('click', setupNewHI);
+        exportCsvBtn.addEventListener('click', exportToCsv);
+
+        // --- FUNCTIONS ---
+        function startSurvey() {
+            const bm = parseFloat(benchmarkInput.value);
+            const bs = parseFloat(backsightInput.value);
+
+            if (isNaN(bm) || isNaN(bs)) {
+                alert('Please enter valid numbers for Benchmark and Backsight.');
+                return;
+            }
+
+            // Set custom field details
+            customFieldName = customFieldNameInput.value.trim() || 'Custom';
+            customFieldFormula = customFieldFormulaInput.value.trim().toUpperCase() || 'ELEV';
+            customHeaderCell.textContent = customFieldName;
+            
+            calculateHI(bm, bs);
+
+            setupSection.style.display = 'none';
+            surveyDataSection.style.display = 'block';
+            dataEntrySection.style.display = 'block';
+            resultsSection.style.display = 'block';
+
+            pointNumberInput.value = pointCounter;
+            readingInput.focus();
+        }
+
+        function calculateHI(elevation, backsight) {
+            heightOfInstrument = elevation + backsight;
+            hiDisplay.textContent = `HI: ${heightOfInstrument.toFixed(3)}`;
+        }
+        
+        function addPoint() {
+            const reading = parseFloat(readingInput.value);
+            const pointNum = pointNumberInput.value.trim();
+
+            if (isNaN(reading)) {
+                alert('Please enter a valid reading.');
+                return;
+            }
+            if (pointNum === '') {
+                alert('Please enter a Point Number.');
+                return;
+            }
+
+            const elevation = heightOfInstrument - reading;
+            
+            let customValue = NaN;
+            try {
+                // Safely evaluate the custom formula by replacing ELEV with the elevation value
+                const formula = customFieldFormula.replace(/ELEV/g, `(${elevation})`);
+                customValue = eval(formula); 
+                if (isNaN(customValue)) throw new Error("Invalid formula result");
+            } catch (e) {
+                alert('Invalid custom formula. Please check syntax (e.g., ELEV + 0.5)');
+                return;
+            }
+
+            const pointData = {
+                point: pointNum,
+                reading: reading,
+                elevation: elevation,
+                custom: customValue
+            };
+
+            surveyData.push(pointData);
+            renderTable();
+
+            // Clear input and prepare for next point
+            readingInput.value = '';
+            pointCounter++;
+            pointNumberInput.value = pointCounter;
+            readingInput.focus();
+        }
+
+        function renderTable() {
+            resultsTableBody.innerHTML = ''; // Clear existing rows
+            surveyData.forEach(data => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${data.point}</td>
+                    <td>${data.reading.toFixed(3)}</td>
+                    <td class="calculated">${data.elevation.toFixed(3)}</td>
+                    <td class="calculated">${data.custom.toFixed(3)}</td>
+                `;
+                resultsTableBody.appendChild(row);
+            });
+        }
+        
+        function setupNewHI() {
+            const lastPoint = surveyData[surveyData.length - 1];
+            if (!lastPoint) {
+                alert('You need at least one point before setting a new HI.');
+                return;
+            }
+            
+            const newBS = prompt(`Setting up new HI from Point #${lastPoint.point} (Elevation: ${lastPoint.elevation.toFixed(3)}).\n\nEnter new Backsight (BS) reading:`);
+            
+            if (newBS !== null && !isNaN(parseFloat(newBS))) {
+                calculateHI(lastPoint.elevation, parseFloat(newBS));
+                alert(`New HI successfully set to ${heightOfInstrument.toFixed(3)}`);
+            } else if (newBS !== null) {
+                alert('Invalid Backsight reading. Please enter a number.');
+            }
+        }
+
+        // --- MODIFIED EXPORT FUNCTION ---
+        function exportToCsv() {
+            if (surveyData.length === 0) {
+                alert('No data to export.');
+                return;
+            }
+            
+            // Use a more compatible header name (no special characters)
+            const headers = ['Point_Num', 'Reading', 'Elevation', customFieldName];
+            
+            // Convert data array to a CSV string
+            const csvRows = [headers.join(',')];
+            surveyData.forEach(row => {
+                const rowArray = [row.point, row.reading.toFixed(3), row.elevation.toFixed(3), row.custom.toFixed(3)];
+                csvRows.push(rowArray.join(','));
+            });
+            const csvString = csvRows.join('\n');
+
+            // Use the Blob method for robust file creation
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            const date = new Date().toISOString().slice(0, 10);
+            link.setAttribute("download", `LevelNotes_Export_${date}.csv`);
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+    });
+    </script>
+
+</body>
+</html>
