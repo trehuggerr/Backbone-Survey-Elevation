@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>LevelNotes</title>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <style>
         /* CSS for App Styling */
         :root {
@@ -88,10 +90,16 @@
         }
         th { background-color: var(--header-bg); color: var(--header-text); }
         .calculated { background-color: #e9ecef; font-weight: bold; }
-        #dataEntrySection, #surveyDataSection, #designCompareSection { display: none; }
+        #dataEntrySection, #surveyDataSection, #designCompareSection, #flaggingOptionsSection { display: none; }
         .flex-container { display: flex; gap: 10px; }
         .design-col { display: none; }
         .design-col input { max-width: 100px; }
+        #chartContainer { position: absolute; left: -9999px; top: -9999px; }
+        .chart-options, .design-options { border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-top: 10px; }
+        .series-selection { display: none; padding-left: 20px; }
+        .checkbox-group, .flag-input-group { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+        .checkbox-group label, .flag-input-group label { margin-bottom: 0; }
+        .flag-input-group input[type="number"] { width: 80px; padding: 8px; }
     </style>
 </head>
 <body>
@@ -139,13 +147,26 @@
         <div id="resultsSection" class="card" style="display: none;">
             <h2>3. Survey Data</h2>
             <button id="toggleDesignBtn" class="button button-secondary" style="margin-bottom: 10px;">Show Design</button>
-            <div id="designCompareSection" class="form-group">
-                <label for="compareSourceSelect">Compare Design Against:</label>
-                <select id="compareSourceSelect">
-                    <option value="elevation">Elevation</option>
-                    <option value="custom" id="customCompareOption">Custom Column</option>
-                </select>
+            
+            <div class="design-options">
+                <div id="designCompareSection" class="form-group">
+                    <label for="compareSourceSelect">Compare Design Against:</label>
+                    <select id="compareSourceSelect">
+                        <option value="elevation">Elevation</option>
+                        <option value="custom" id="customCompareOption">Custom Column</option>
+                    </select>
+                </div>
+                <div id="flaggingOptionsSection" class="form-group">
+                     <div class="checkbox-group">
+                        <input type="checkbox" id="enableFlagging">
+                        <label for="enableFlagging"><b>Highlight Differences Over:</b></label>
+                     </div>
+                     <div class="flag-input-group">
+                         <input type="number" inputmode="decimal" id="flagThreshold" value="0.5" step="any">
+                    </div>
+                </div>
             </div>
+
             <table>
                 <thead>
                     <tr>
@@ -159,13 +180,35 @@
                 </thead>
                 <tbody></tbody>
             </table>
+            
+            <div class="chart-options">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="plotGraphCheck" checked>
+                    <label for="plotGraphCheck"><b>Plot Graph in Export?</b></label>
+                </div>
+                <div class="series-selection" id="seriesSelection">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="plotElevationCheck" checked>
+                        <label for="plotElevationCheck">Elevation</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="plotCustomCheck" checked>
+                        <label for="plotCustomCheck" id="plotCustomLabel">Custom</label>
+                    </div>
+                     <div class="checkbox-group">
+                        <input type="checkbox" id="plotDesignCheck" checked>
+                        <label for="plotDesignCheck">Design Elevation</label>
+                    </div>
+                </div>
+            </div>
+
             <div class="flex-container">
-                <button id="exportCsvBtn" class="button">Export to CSV</button>
+                <button id="exportBtn" class="button">Export to Excel</button>
                 <button id="newHiBtn" class="button button-danger">New HI</button>
             </div>
         </div>
-
     </div>
+    <div id="chartContainer"><canvas id="myChart"></canvas></div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
@@ -195,21 +238,31 @@
         const customFieldNameInput = document.getElementById('customFieldName');
         const customFieldFormulaInput = document.getElementById('customFieldFormula');
         const toggleDesignBtn = document.getElementById('toggleDesignBtn');
-        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const exportBtn = document.getElementById('exportBtn');
         const newHiBtn = document.getElementById('newHiBtn');
         const designCompareSection = document.getElementById('designCompareSection');
+        const flaggingOptionsSection = document.getElementById('flaggingOptionsSection');
         const compareSourceSelect = document.getElementById('compareSourceSelect');
         const customCompareOption = document.getElementById('customCompareOption');
+        const plotGraphCheck = document.getElementById('plotGraphCheck');
+        const seriesSelection = document.getElementById('seriesSelection');
+        const plotCustomLabel = document.getElementById('plotCustomLabel');
 
         // --- EVENT LISTENERS ---
         startSurveyBtn.addEventListener('click', startSurvey);
         addPointBtn.addEventListener('click', addPoint);
         readingInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addPoint(); });
         newHiBtn.addEventListener('click', setupNewHI);
-        exportCsvBtn.addEventListener('click', exportToCsv);
+        exportBtn.addEventListener('click', exportToXlsxWithChartJs);
         toggleDesignBtn.addEventListener('click', toggleDesignColumns);
         resultsTableBody.addEventListener('input', handleDesignInputChange);
         compareSourceSelect.addEventListener('change', handleCompareSourceChange);
+        plotGraphCheck.addEventListener('change', () => {
+             seriesSelection.style.display = plotGraphCheck.checked ? 'block' : 'none';
+        });
+
+        // --- INITIAL SETUP ---
+        seriesSelection.style.display = plotGraphCheck.checked ? 'block' : 'none';
 
         // --- FUNCTIONS ---
         function startSurvey() {
@@ -221,6 +274,7 @@
             customFieldFormula = customFieldFormulaInput.value.trim().toUpperCase() || 'ELEV';
             customHeaderCell.textContent = customFieldName;
             customCompareOption.textContent = `Compare with '${customFieldName}'`;
+            plotCustomLabel.textContent = customFieldName;
             
             calculateHI(bm, bs);
             setupSection.style.display = 'none';
@@ -321,10 +375,12 @@
             if (designVisible) {
                 toggleDesignBtn.textContent = 'Hide Design';
                 designCompareSection.style.display = 'block';
+                flaggingOptionsSection.style.display = 'block';
                 allDesignCols.forEach(col => col.style.display = 'table-cell');
             } else {
                 toggleDesignBtn.textContent = 'Show Design';
                 designCompareSection.style.display = 'none';
+                flaggingOptionsSection.style.display = 'none';
                 allDesignCols.forEach(col => col.style.display = 'none');
             }
         }
@@ -341,31 +397,105 @@
                 alert('Invalid Backsight reading.');
             }
         }
+        
+        async function exportToXlsxWithChartJs() {
+            if (surveyData.length === 0) {
+                alert('No data to export.');
+                return;
+            }
 
-        function exportToCsv() {
-            if (surveyData.length === 0) { alert('No data to export.'); return; }
-            let headers = ['Point_Num', 'Reading', 'Elevation', customFieldName];
-            if (designVisible) { headers.push('Design_Elev', 'Cut_Fill'); }
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Survey Data');
             
-            const csvRows = [headers.join(',')];
+            worksheet.columns = [
+                { header: 'Point_Num', key: 'point', width: 15 },
+                { header: 'Reading', key: 'reading', width: 15, style: { numFmt: '0.000' } },
+                { header: 'Elevation', key: 'elevation', width: 15, style: { numFmt: '0.000' } },
+                { header: customFieldName, key: 'custom', width: 20, style: { numFmt: '0.000' } },
+                { header: 'Design_Elev', key: 'design', width: 15, style: { numFmt: '0.000' } },
+                { header: 'Cut_Fill', key: 'cutFill', width: 15, style: { numFmt: '0.000' } }
+            ];
+
             surveyData.forEach(row => {
-                let rowArray = [row.point, row.reading.toFixed(3), row.elevation.toFixed(3), row.custom.toFixed(3)];
-                if (designVisible) { rowArray.push(row.design, row.cutFill); }
-                csvRows.push(rowArray.join(','));
+                worksheet.addRow({
+                    ...row,
+                    reading: parseFloat(row.reading),
+                    elevation: parseFloat(row.elevation),
+                    custom: parseFloat(row.custom),
+                    design: row.design ? parseFloat(row.design) : null,
+                    cutFill: row.cutFill ? parseFloat(row.cutFill) : null
+                });
             });
-            const csvString = csvRows.join('\n');
-            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            
+            // --- NEW: CONDITIONAL FORMATTING ---
+            const flaggingEnabled = document.getElementById('enableFlagging').checked;
+            const flagThreshold = parseFloat(document.getElementById('flagThreshold').value);
+
+            if (flaggingEnabled && !isNaN(flagThreshold)) {
+                worksheet.eachRow({ includeEmpty: false }, function(row, rowNumber) {
+                    if (rowNumber > 1) { // Skip header row
+                        const cutFillCell = row.getCell('cutFill');
+                        if (cutFillCell.value !== null && Math.abs(cutFillCell.value) > flagThreshold) {
+                            cutFillCell.fill = {
+                                type: 'pattern',
+                                pattern: 'solid',
+                                fgColor: { argb: 'FFFFFF00' } // Yellow
+                            };
+                        }
+                    }
+                });
+            }
+
+            if (plotGraphCheck.checked) {
+                const datasets = [];
+                const labels = surveyData.map(row => row.point);
+                
+                if (document.getElementById('plotElevationCheck').checked) {
+                    datasets.push({ label: 'Elevation', data: surveyData.map(r => r.elevation), borderColor: 'blue', fill: false });
+                }
+                if (document.getElementById('plotCustomCheck').checked && surveyData.some(r => !isNaN(r.custom))) {
+                    datasets.push({ label: customFieldName, data: surveyData.map(r => r.custom), borderColor: 'orange', fill: false });
+                }
+                if (document.getElementById('plotDesignCheck').checked && surveyData.some(r => r.design && !isNaN(parseFloat(r.design)))) {
+                    datasets.push({ label: 'Design Elevation', data: surveyData.map(r => r.design ? parseFloat(r.design) : null), borderColor: 'red', fill: false });
+                }
+                
+                if (datasets.length > 0) {
+                    const ctx = document.getElementById('myChart').getContext('2d');
+                    const chart = new Chart(ctx, {
+                        type: 'line',
+                        data: { labels, datasets },
+                        options: { animation: false, scales: { y: { beginAtZero: false } } }
+                    });
+                    
+                    const chartImage = await new Promise(resolve => {
+                        setTimeout(() => {
+                            resolve(chart.toBase64Image());
+                            chart.destroy();
+                        }, 500);
+                    });
+
+                    const imageId = workbook.addImage({ base64: chartImage, extension: 'png' });
+                    worksheet.addImage(imageId, {
+                        tl: { col: 7, row: 1 },
+                        br: { col: 16, row: 20 }
+                    });
+                }
+            }
+            
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             const url = URL.createObjectURL(blob);
+            
             const link = document.createElement("a");
             const date = new Date().toISOString().slice(0, 10);
             link.setAttribute("href", url);
-            link.setAttribute("download", `LevelNotes_Export_${date}.csv`);
+            link.setAttribute("download", `LevelNotes_Export_${date}.xlsx`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         }
     });
     </script>
-
 </body>
 </html>
